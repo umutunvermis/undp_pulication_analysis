@@ -3,7 +3,10 @@ from bs4 import BeautifulSoup
 from PyPDF2 import PdfReader
 from pdf_handler import get_pdf_content
 from pymongo import MongoClient
-client = MongoClient('mongodb+srv://admin:admin@cluster0.yyxcg3b.mongodb.net/?retryWrites=true&w=majority')
+import os
+
+mongo_key = os.getenv("MONGO_KEY")  
+client = MongoClient(mongo_key)
 mydb = client["unsdg"]
 mycol = mydb["publication"]
 
@@ -52,7 +55,7 @@ if __name__ == "__main__":
                 pub_urls = get_pub_urls(card)
                 title, pdfs, goals = get_pdfs_and_goals(pub_urls)
             except:
-                print("Error at page" + i)
+                print("Error at page" + str(i))
                 continue
             try:
                 for pdf in pdfs:
