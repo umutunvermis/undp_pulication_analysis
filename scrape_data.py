@@ -4,13 +4,18 @@ from PyPDF2 import PdfReader
 from pdf_handler import get_pdf_content
 from pymongo import MongoClient
 import os
+from dotenv import load_dotenv
+from concurrent.futures import ThreadPoolExecutor
+
+# Load environment variables from .env file
+load_dotenv()
 
 # MongoDB connection
 mongo_key = os.getenv("MONGO_KEY")
 if not mongo_key:
     raise ValueError("MONGO_KEY environment variable not set.")
 
-try:
+try:    
     client = MongoClient(mongo_key)
     mydb = client["unsdg"]
     mycol = mydb["publication"]
@@ -81,35 +86,43 @@ def get_pdf_url(pdf):
     except Exception as e:
         raise ValueError(f"Error extracting PDF URL: {e}")
 
+def process_card(card, page_number):
+    try:
+        pub_url = get_pub_urls(card)
+        title, pdfs, goals = get_pdfs_and_goals(pub_url)
+    except Exception as e:
+        print(f"Error processing publication at page {page_number}: {e}")
+        return
+
+    for pdf in pdfs:
+        try:
+            pdf_url = get_pdf_url(pdf)
+            pdf_content = get_pdf_content(pdf_url)
+            doc = {
+                "title": title,
+                "url": pub_url,
+                "goals": goals,
+                "content": pdf_content
+            }
+            mycol.insert_one(doc)
+        except Exception as e:
+            print(f"Error processing PDF at URL {pub_url}: {e}")
+            continue
+
 # main function
 if __name__ == "__main__":
     last_page = 10
-    for i in range(0, last_page):
-        try:
-            cards = get_cards(i)
-        except Exception as e:
-            print(f"Failed to fetch cards for page {i}: {e}")
-            continue
-
-        for card in cards:
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        for i in range(0, last_page):
             try:
-                pub_url = get_pub_urls(card)
-                title, pdfs, goals = get_pdfs_and_goals(pub_url)
+                cards = get_cards(i)
             except Exception as e:
-                print(f"Error processing publication at page {i}: {e}")
+                print(f"Failed to fetch cards for page {i}: {e}")
                 continue
 
-            for pdf in pdfs:
+            futures = [executor.submit(process_card, card, i) for card in cards]
+            for future in futures:
                 try:
-                    pdf_url = get_pdf_url(pdf)
-                    pdf_content = get_pdf_content(pdf_url)
-                    doc = {
-                        "title": title,
-                        "url": pub_url,
-                        "goals": goals,
-                        "content": pdf_content
-                    }
-                    mycol.insert_one(doc)
+                    future.result()
                 except Exception as e:
-                    print(f"Error processing PDF at URL {pub_url}: {e}")
-                    continue
+                    print(f"Error in processing task: {e}")
